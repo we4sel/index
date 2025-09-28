@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>spoodblort bookie tools</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="./cors.js"></script>
     <script src="./localstorage.js"></script>
+    <script src="./table.js"></script>
     <style>
         body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
     </style>
@@ -72,25 +72,7 @@
             }
         }
 
-        // Spinner status for CORS proxy attempts
-        function setStatusSpinner(attempt, total, proxyName) {
-            const el = $('#status');
-            el.innerHTML = `
-                <span class="inline-block w-3 h-3 mr-2 border-2 border-gray-400 border-t-transparent rounded-full align-[-2px] animate-spin"></span>
-                trying CORS proxy ${attempt} of ${total}${proxyName ? ` (${proxyName})` : ''}...
-            `;
-        }
-
-        // Fetch JSON via CORS proxies with live attempt updates
-        async function fetchJsonViaCors(url) {
-            const start = performance.now();
-            try {
-                const { data, response, proxy } = await window.cors.fetchJson(url, undefined, (i, n, p) => setStatusSpinner(i, n, p?.name));
-                return { ok: true, status: response.status, data, error: null, ms: performance.now() - start, proxy: proxy?.name };
-            } catch (e) {
-                return { ok: false, status: 0, data: null, error: e?.message || 'all proxies failed', ms: performance.now() - start };
-            }
-        }
+        // (CORS proxies removed) – using direct fetch only
 
         function setStatus(message) {
             const el = $('#status');
@@ -127,6 +109,10 @@
             });
             const container = document.createElement('div');
             container.appendChild(root);
+            const table = container.querySelector('table');
+            if (window.tableSort && table) {
+                window.tableSort.makeTableSortable(table);
+            }
             return container;
         }
 
@@ -285,13 +271,13 @@
             setStatus('prefetching data...');
             try {
                 const [fightersRes, fightsRes, scheduleRes] = await Promise.all([
-                    window.cors.fetchJson('https://spoodblort.com/api/fighters', undefined, (i, n, p) => setStatusSpinner(i, n, p?.name)),
-                    window.cors.fetchJson('https://spoodblort.com/api/fights', undefined, (i, n, p) => setStatusSpinner(i, n, p?.name)),
-                    window.cors.fetchJson('https://spoodblort.com/api/schedule/today', undefined, (i, n, p) => setStatusSpinner(i, n, p?.name)),
+                    fetchJson('https://spoodblort.com/api/fighters'),
+                    fetchJson('https://spoodblort.com/api/fights'),
+                    fetchJson('https://spoodblort.com/api/schedule/today'),
                 ]);
-                if (Array.isArray(fightersRes.data)) window.store.setJSON('fighters', fightersRes.data);
-                if (Array.isArray(fightsRes.data)) window.store.setJSON('fights', fightsRes.data);
-                if (scheduleRes?.data && typeof scheduleRes.data === 'object') window.store.setJSON('schedule_today', scheduleRes.data);
+                if (fightersRes.ok && Array.isArray(fightersRes.data)) window.store.setJSON('fighters', fightersRes.data);
+                if (fightsRes.ok && Array.isArray(fightsRes.data)) window.store.setJSON('fights', fightsRes.data);
+                if (scheduleRes.ok && scheduleRes?.data && typeof scheduleRes.data === 'object') window.store.setJSON('schedule_today', scheduleRes.data);
                 // build in-memory fighters map from cache
                 ensureFightersCacheFromStore();
             } catch (_) {
