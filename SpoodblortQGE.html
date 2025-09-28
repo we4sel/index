@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>V5 QUANTIZED GUESSING ENGINE</title>
+    <!--
+      This meta tag ensures the page is responsive and looks good on all devices.
+      It sets the initial zoom level to 1.0 and makes the width of the page
+      equal to the device's width.
+    -->
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!--
+      This script imports the Tailwind CSS framework from a CDN.
+      We use Tailwind for all our styling, which allows us to write
+      utility classes directly in the HTML to create a responsive and
+      modern design without needing a separate CSS file.
+    -->
+
+    <style>
+        /* This style block contains custom CSS rules. */
+        body { font-family: 'Inter', sans-serif; }
+        /* The body is set to use the 'Inter' font for a clean, professional look. */
+
+        .text-shadow-outline {
+            text-shadow: 2px 2px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000;
+        }
+        /* This utility class adds a black outline effect to the text, making it stand out against the background. */
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 flex items-center justify-center min-h-screen p-4">
+
+    <!--
+      This is the main container for the entire application. It uses a dark background
+      and a centered layout to create a focused, modern interface.
+    -->
+    <div class="w-full max-w-7xl bg-gray-800 rounded-xl shadow-2xl p-6 md:p-10 border border-gray-700">
+        <!-- The header section contains the main title of the application. -->
+        <header class="text-center mb-8">
+            <h1 class="text-4xl md:text-5xl font-extrabold text-white mb-2 text-shadow-outline">V5 QUANTIZED GUESSING ENGINE</h1>
+        </header>
+
+        <!--
+          This section contains the user input controls. It includes a label,
+          a text box for entering the starting match number, and an "Analyze" button.
+          The `flex` classes make it a responsive layout that adapts to different screen sizes.
+        -->
+        <div class="flex flex-col md:flex-row justify-center items-center space-y-4 md:space-y-0 md:space-x-4 mb-6">
+            <span class="text-gray-300 text-lg font-bold">ENTER STARTING MATCH #</span>
+            <input type="text" id="fight-input" value="1" class="w-full md:w-auto px-4 py-2 text-lg text-center rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500">
+            <button id="analyze-btn" class="w-full md:w-auto px-6 py-2 text-lg bg-cyan-600 hover:bg-cyan-500 transition-colors duration-200 rounded-lg shadow-lg font-bold">Analyze</button>
+        </div>
+
+        <!--
+          This is the main content area where the fight analyses will be displayed.
+          It starts with a loading indicator which will be hidden once the data is fetched.
+        -->
+        <main id="analysis-container" class="space-y-6">
+            <div id="loading" class="text-center text-gray-400 animate-pulse">
+                <p>Analyzing data...</p>
+            </div>
+        </main>
+
+        <!-- A simple, non-interactive footer. -->
+        <footer class="mt-8 pt-6 border-t border-gray-700 text-center text-gray-500 text-sm"></footer>
+    </div>
+
+    <script>
+        // These constants are boilerplate for Firebase integration but are not used in this specific implementation.
+        // They are kept for potential future use or to show the application's environment.
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        // This is a key used for local storage to save the last entered fight number.
+        const LAST_FIGHT_KEY = 'lastFightNumber';
+
+        // Get references to the main HTML elements we will interact with.
+        const container = document.getElementById('analysis-container');
+        const loading = document.getElementById('loading');
+        const fightInput = document.getElementById('fight-input');
+        
+        // These arrays define the labels and HTML IDs for the four primary stats.
+        const statNames = ['STR', 'SPD', 'END', 'TEQ'];
+        const statIds = ['strength', 'speed', 'endurance', 'technique'];
+
+        /**
+         * Fetches and analyzes a series of fights from the spoodblort.com website until an error is encountered.
+         * It uses a CORS proxy to bypass cross-origin restrictions.
+         * @param {number} startNum The starting fight number.
+         */
+        async function fetchAndAnalyzeFights(startNum) {
+            // Show the loading indicator and clear any previous content.
+            loading.classList.remove('hidden');
+            container.innerHTML = '';
+            
+            let num = startNum;
+            // Use a while loop to continue fetching until a network error or a non-existent page is encountered.
+            while (true) {
+                try {
+                    // Construct the target URL for the fight page.
+                    const targetUrl = `https://spoodblort.com/fight/${num}`;
+                    // Route the target URL through the CORS proxy (api.allorigins.win).
+                    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+
+                    // Fetch the HTML content using the proxy.
+                    const response = await fetch(proxyUrl);
+
+                    // Check if the network request was successful. If not, this is likely the end of the matches.
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok, possibly end of matches.');
+                    }
+                    const htmlText = await response.text();
+                    
+                    // Parse the HTML string into a DOM object to make it easier to query.
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(htmlText, 'text/html');
+
+                    // Extract the fighter names using CSS selectors.
+                    const fighterA = {
+                        name: doc.querySelector('.tot-col.left .tot-fighter-name')?.textContent.trim(),
+                        stats: []
+                    };
+                    const fighterB = {
+                        name: doc.querySelector('.tot-col.right .tot-fighter-name')?.textContent.trim(),
+                        stats: []
+                    };
+
+                    // Throw an error if fighter names cannot be found, which signifies an issue with the page content.
+                    if (!fighterA.name || !fighterB.name) {
+                        throw new Error('Could not find fighter names on the page.');
+                    }
+
+                    // A flag to check if all stats were successfully found.
+                    let allStatsFound = true;
+                    // Loop through each stat ID to find and extract the stat values for both fighters.
+                    statIds.forEach(id => {
+                        const statAElement = doc.getElementById(`tot-f1-${id}`);
+                        const statBElement = doc.getElementById(`tot-f2-${id}`);
+                        
+                        // Check if the stat elements exist.
+                        if (!statAElement || !statBElement) {
+                            allStatsFound = false;
+                            return; // Exit the forEach loop.
+                        }
+                        
+                        // Parse the stat text content into integers.
+                        const statA = parseInt(statAElement.textContent.trim());
+                        const statB = parseInt(statBElement.textContent.trim());
+                        
+                        // Validate that the parsed values are numbers.
+                        if (isNaN(statA) || isNaN(statB)) {
+                            allStatsFound = false;
+                            return; // Exit the forEach loop.
+                        }
+                        
+                        // Push the valid stats into the fighter objects.
+                        fighterA.stats.push(statA);
+                        fighterB.stats.push(statB);
+                    });
+                    
+                    // If any stat was missing, throw an error.
+                    if (!allStatsFound) {
+                        throw new Error('Could not find all four primary stats (STR, SPD, END, TEQ).');
+                    }
+
+                    // Perform the core calculation based on the user-provided method.
+                    const totalStats = fighterA.stats.length;
+                    let totalWinChance = 0;
+                    
+                    // Calculate the win chance for each stat and sum them up.
+                    fighterA.stats.forEach((statA, i) => {
+                        const statB = fighterB.stats[i];
+                        totalWinChance += statA / (statA + statB);
+                    });
+
+                    // Average the total win chances to get the final probability.
+                    totalWinChance /= totalStats;
+                    // Calculate the percentage advantage of the winning fighter.
+                    const advantage = Math.abs(totalWinChance - (1 - totalWinChance));
+                    // Determine the background color for the advantage box based on who has the higher win chance.
+                    const advantageBoxColor = totalWinChance > 0.5 ? 'bg-orange-600' : 'bg-cyan-600';
+
+                    // Define the card classes for each fighter, including colors.
+                    const fighterA_card_class = `bg-orange-600 rounded-lg p-6 w-full text-center shadow-lg`;
+                    const fighterB_card_class = `bg-cyan-600 rounded-lg p-6 w-full text-center shadow-lg`;
+
+                    // Generate the HTML for the stat sub-boxes for Fighter A.
+                    const fighterAStatsHtml = fighterA.stats.map((stat, i) => `
+                        <div class="bg-white/20 rounded-md p-1 text-center">
+                            <p class="text-xs font-semibold">${statNames[i]}</p>
+                            <p class="text-lg font-bold">${stat}</p>
+                        </div>
+                    `).join('');
+
+                    // Generate the HTML for the stat sub-boxes for Fighter B.
+                    const fighterBStatsHtml = fighterB.stats.map((stat, i) => `
+                        <div class="bg-white/20 rounded-md p-1 text-center">
+                            <p class="text-xs font-semibold">${statNames[i]}</p>
+                            <p class="text-lg font-bold">${stat}</p>
+                        </div>
+                    `).join('');
+                    
+                    // Construct the full HTML for a single fight analysis block using a template literal.
+                    const resultHtml = `
+                        <div class="my-8">
+                            <div class="flex flex-col md:flex-row justify-around items-center space-y-4 md:space-y-0 md:space-x-4">
+                                <div class="${fighterA_card_class}">
+                                    <h3 class="text-2xl font-bold text-white">${fighterA.name}</h3>
+                                    <div class="grid grid-cols-2 gap-2 mt-4">
+                                        ${fighterAStatsHtml}
+                                    </div>
+                                </div>
+                                <div class="${advantageBoxColor} rounded-lg p-6 w-full text-center shadow-inner md:w-auto md:mx-4">
+                                    <p class="text-5xl text-white font-bold mb-1">#${num}</p>
+                                    <h4 class="text-lg font-bold text-gray-200 mb-1">Advantage</h4>
+                                    <p class="text-5xl font-extrabold text-lime-400">
+                                        ${(advantage * 100).toFixed(2)}%
+                                    </p>
+                                </div>
+                                <div class="${fighterB_card_class}">
+                                    <h3 class="text-2xl font-bold text-white">${fighterB.name}</h3>
+                                    <div class="grid grid-cols-2 gap-2 mt-4">
+                                        ${fighterBStatsHtml}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    // Append the generated HTML to the container.
+                    container.innerHTML += resultHtml;
+                    num++; // Increment the fight number to analyze the next one.
+                } catch (error) {
+                    // If an error occurs during fetch or parsing, display a clear error message and stop the loop.
+                    console.error(`Analysis failed for fight #${num}:`, error);
+                    container.innerHTML += `
+                        <div class="bg-red-500 p-4 rounded-lg text-center text-white my-8">
+                            <p class="font-bold">Analysis stopped at fight #${num}.</p>
+                            <p>Reason: Failed to retrieve data or page structure changed.</p>
+                        </div>
+                    `;
+                    break; // Exit the while loop.
+                }
+            }
+
+            // Hide the loading indicator once all analyses are complete.
+            loading.classList.add('hidden');
+        }
+
+        // Add a click event listener to the "Analyze" button.
+        document.getElementById('analyze-btn').addEventListener('click', () => {
+            const inputNum = parseInt(fightInput.value);
+            if (!isNaN(inputNum) && inputNum > 0) {
+                // Save the last entered number to local storage for persistence.
+                localStorage.setItem(LAST_FIGHT_KEY, inputNum);
+                // Start the analysis, which will continue until an error is encountered.
+                fetchAndAnalyzeFights(inputNum);
+            }
+        });
+
+        // This function runs automatically when the page loads.
+        window.onload = () => {
+            // Retrieve the last fight number from local storage.
+            const storedFightNumber = localStorage.getItem(LAST_FIGHT_KEY);
+            // Use the stored number or default to 1 if no number is found.
+            const startingNumber = storedFightNumber ? parseInt(storedFightNumber, 10) : 1;
+            // Set the input field's value to the starting number.
+            fightInput.value = startingNumber;
+            // Begin the initial analysis.
+            fetchAndAnalyzeFights(startingNumber);
+        };
+    </script>
+</body>
+</html>
