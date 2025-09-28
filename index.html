@@ -274,7 +274,7 @@
             return card;
         }
 
-        function renderHeadToHeadCard(fA, fB) {
+        function renderHeadToHeadCard(fA, fB, leftExtra, rightExtra) {
             const pStatA = computeStatWinProb(fA, fB);
             const pStatB = 1 - pStatA;
             const pRecA = computeRecordBasedProb(fA, fB);
@@ -291,6 +291,7 @@
             const aName = document.createElement('div'); aName.className = 'text-xl font-bold'; aName.textContent = fA?.Name || 'Fighter A';
             const aRec = document.createElement('div'); aRec.className = 'text-sm text-gray-400'; aRec.textContent = `${safeNum(fA?.Wins)}-${safeNum(fA?.Losses)}-${safeNum(fA?.Draws)}`;
             aCol.appendChild(aName); aCol.appendChild(aRec);
+            if (leftExtra) aCol.appendChild(leftExtra);
 
             const center = document.createElement('div');
             center.className = 'bg-gray-800 rounded-lg p-5 text-center border border-gray-700';
@@ -312,10 +313,70 @@
             const bName = document.createElement('div'); bName.className = 'text-xl font-bold'; bName.textContent = fB?.Name || 'Fighter B';
             const bRec = document.createElement('div'); bRec.className = 'text-sm text-gray-400'; bRec.textContent = `${safeNum(fB?.Wins)}-${safeNum(fB?.Losses)}-${safeNum(fB?.Draws)}`;
             bCol.appendChild(bName); bCol.appendChild(bRec);
+            if (rightExtra) bCol.appendChild(rightExtra);
 
             row.appendChild(aCol); row.appendChild(center); row.appendChild(bCol);
             card.appendChild(row);
             return card;
+        }
+
+        function getRecentFightsFor(fighterId, limit) {
+            const fights = window.store.getJSON('fights');
+            const list = Array.isArray(fights) ? fights : [];
+            const recent = list.filter(x => x.Fighter1ID === fighterId || x.Fighter2ID === fighterId)
+                .sort((a,b) => new Date(b.ScheduledTime).getTime() - new Date(a.ScheduledTime).getTime())
+                .slice(0, limit);
+            return recent.map(f => {
+                const isA = f.Fighter1ID === fighterId;
+                const opponentId = isA ? f.Fighter2ID : f.Fighter1ID;
+                const opponentName = isA ? (f.Fighter2Name || fightersCache.byId.get(opponentId)?.Name || `#${opponentId}`)
+                                         : (f.Fighter1Name || fightersCache.byId.get(opponentId)?.Name || `#${opponentId}`);
+                const winnerId = unwrapNullish(f, 'WinnerID');
+                let outcome = '';
+                if (winnerId) outcome = winnerId === fighterId ? 'W' : 'L';
+                const when = f.CompletedAt && typeof f.CompletedAt === 'object' && f.CompletedAt.Valid ? f.CompletedAt.Time : f.ScheduledTime;
+                return { id: f.ID, opponentId, opponentName, outcome, when };
+            });
+        }
+
+        function renderRecentListFor(fighterId, side, onPick) {
+            const items = getRecentFightsFor(fighterId, 7);
+            const box = document.createElement('div');
+            box.className = 'mt-4';
+            const title = document.createElement('div');
+            title.className = 'text-xs font-semibold text-gray-300 mb-2';
+            title.textContent = 'recent fights';
+            box.appendChild(title);
+            const list = document.createElement('div');
+            list.className = 'space-y-1';
+            items.forEach(it => {
+                const row = document.createElement('button');
+                row.type = 'button';
+                row.className = 'w-full text-left px-3 py-2 rounded bg-white/5 hover:bg-white/10 border border-gray-700 flex items-center justify-between';
+                const left = document.createElement('span');
+                left.className = `text-xs font-semibold ${it.outcome==='W' ? 'text-green-400' : (it.outcome==='L' ? 'text-red-400' : 'text-gray-300')}`;
+                left.textContent = it.outcome || '—';
+                const mid = document.createElement('span');
+                mid.className = 'text-sm text-gray-200';
+                mid.textContent = it.opponentName;
+                const right = document.createElement('span');
+                right.className = 'text-xs text-gray-400';
+                right.textContent = formatTime(it.when);
+                const leftWrap = document.createElement('div');
+                leftWrap.className = 'flex items-center gap-3';
+                leftWrap.appendChild(left); leftWrap.appendChild(mid);
+                row.appendChild(leftWrap); row.appendChild(right);
+                row.addEventListener('click', () => onPick(side, fighterId, it.opponentId));
+                list.appendChild(row);
+            });
+            if (!items.length) {
+                const empty = document.createElement('div');
+                empty.className = 'text-xs text-gray-500';
+                empty.textContent = 'no recent fights';
+                list.appendChild(empty);
+            }
+            box.appendChild(list);
+            return box;
         }
 
         const fightersCache = {
@@ -477,7 +538,21 @@
                 const fB = fightersCache.byId.get(bId);
                 result.innerHTML = '';
                 if (fA && fB && aId !== bId) {
-                    result.appendChild(renderHeadToHeadCard(fA, fB));
+                    const leftExtra = renderRecentListFor(aId, 'A', (side, fid, oppId) => {
+                        if (fightersCache.byId.has(oppId)) {
+                            if (side === 'A') { bSel.select.value = String(oppId); }
+                            else { aSel.select.value = String(oppId); }
+                            render();
+                        }
+                    });
+                    const rightExtra = renderRecentListFor(bId, 'B', (side, fid, oppId) => {
+                        if (fightersCache.byId.has(oppId)) {
+                            if (side === 'B') { aSel.select.value = String(oppId); }
+                            else { bSel.select.value = String(oppId); }
+                            render();
+                        }
+                    });
+                    result.appendChild(renderHeadToHeadCard(fA, fB, leftExtra, rightExtra));
                 } else {
                     result.appendChild(renderTable(['info'], [[aId === bId ? 'select two different fighters' : 'selection missing']]));
                 }
