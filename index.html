@@ -515,7 +515,7 @@
                 const sec = document.createElement('section');
                 const h = document.createElement('h2');
                 h.className = `text-lg font-bold mt-6 ${accent || ''}`;
-                h.textContent = title;
+                h.textContent = `${title} (${fighters.length})`;
                 sec.appendChild(h);
                 const grid = document.createElement('div');
                 grid.className = 'grid sm:grid-cols-2 lg:grid-cols-3 gap-3';
