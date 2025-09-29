@@ -20,6 +20,7 @@
                 <button data-route="fights" class="nav-btn px-3 py-2 rounded-md text-sm font-semibold hover:bg-gray-800">fights</button>
                 <button data-route="fighters" class="nav-btn px-3 py-2 rounded-md text-sm font-semibold hover:bg-gray-800">fighters</button>
                 <button data-route="odds" class="nav-btn px-3 py-2 rounded-md text-sm font-semibold hover:bg-gray-800">odds</button>
+                <button data-route="teams" class="nav-btn px-3 py-2 rounded-md text-sm font-semibold hover:bg-gray-800">teams</button>
             </nav>
         </div>
     </header>
@@ -50,6 +51,7 @@
             fights: 'fights',
             fighters: 'fighters',
             odds: 'odds',
+            teams: 'teams',
         };
 
         async function fetchJson(url) {
@@ -485,6 +487,74 @@
             setStatus('');
         }
 
+        async function routeTeams() {
+            setStatus('teams');
+            const data = window.store.getJSON('fighters');
+            const arr = Array.isArray(data) ? data : [];
+            const byTeam = new Map();
+            const freeAgents = [];
+            const customFighters = [];
+            arr.forEach(f => {
+                const team = (f.Team || '').trim();
+                const lc = team.toLowerCase();
+                const isFreeTeam = lc === 'free agent' || lc === 'free agents' || lc === 'fa';
+                const isCustomTeam = lc === 'custom fighter' || lc === 'custom fighters' || lc === 'custom';
+                if (f.IsCustom || isCustomTeam) {
+                    customFighters.push(f);
+                } else if (!team || isFreeTeam) {
+                    freeAgents.push(f);
+                } else {
+                    if (!byTeam.has(team)) byTeam.set(team, []);
+                    byTeam.get(team).push(f);
+                }
+            });
+
+            const container = document.createElement('div');
+
+            function teamSection(title, fighters, accent) {
+                const sec = document.createElement('section');
+                const h = document.createElement('h2');
+                h.className = `text-lg font-bold mt-6 ${accent || ''}`;
+                h.textContent = title;
+                sec.appendChild(h);
+                const grid = document.createElement('div');
+                grid.className = 'grid sm:grid-cols-2 lg:grid-cols-3 gap-3';
+                fighters.sort((a,b)=> String(a.Name||'').localeCompare(String(b.Name||'')));
+                fighters.forEach(f => {
+                    const card = document.createElement('div');
+                    card.className = 'rounded-lg border border-gray-800 bg-gray-900/50 p-3';
+                    const name = document.createElement('div'); name.className = 'font-semibold'; name.textContent = f.Name || `#${f.ID}`;
+                    const meta = document.createElement('div'); meta.className = 'text-xs text-gray-400 mt-1'; meta.textContent = `${f.FighterClass || ''} • ${f.Wins||0}-${f.Losses||0}-${f.Draws||0}`;
+                    const stats = document.createElement('div'); stats.className = 'mt-2 grid grid-cols-4 gap-1 text-center text-xs';
+                    ['Strength','Speed','Endurance','Technique'].forEach(k=>{
+                        const box = document.createElement('div'); box.className = 'bg-white/5 rounded p-1';
+                        const l = document.createElement('div'); l.className = 'text-[10px] text-gray-400'; l.textContent = k[0]+k.slice(1,3).toLowerCase();
+                        const v = document.createElement('div'); v.className = 'font-bold'; v.textContent = String(f[k] ?? '');
+                        box.appendChild(l); box.appendChild(v); stats.appendChild(box);
+                    });
+                    card.appendChild(name); card.appendChild(meta); card.appendChild(stats);
+                    grid.appendChild(card);
+                });
+                sec.appendChild(grid);
+                return sec;
+            }
+
+            // Teams
+            const sortedTeams = Array.from(byTeam.keys()).sort((a,b)=> a.localeCompare(b));
+            sortedTeams.forEach(team => {
+                container.appendChild(teamSection(team, byTeam.get(team), 'text-cyan-300'));
+            });
+
+            // Free agents
+            container.appendChild(teamSection('free agents', freeAgents, 'text-orange-300'));
+
+            // Custom fighters
+            container.appendChild(teamSection('custom fighters', customFighters, 'text-lime-300'));
+
+            setView(container);
+            setStatus('');
+        }
+
         async function routeOdds() {
             setStatus('head-to-head odds');
             ensureFightersCacheFromStore();
@@ -586,6 +656,7 @@
             if (r === ROUTES.fights) return routeFights();
             if (r === ROUTES.fighters) return routeFighters();
             if (r === ROUTES.odds) return routeOdds();
+            if (r === ROUTES.teams) return routeTeams();
         }
 
         $$('.nav-btn').forEach(btn => btn.addEventListener('click', () => navigate(btn.dataset.route)));
