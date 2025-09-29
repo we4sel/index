@@ -7,8 +7,60 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="./localstorage.js"></script>
     <script src="./table.js"></script>
+    <script src="./draft.js"></script>
+    <script src="./timer.js"></script>
     <style>
         * { font-family: sans-serif; }
+        /* Draft pick pop effect */
+        @keyframes pick-pop {
+            0% { transform: scale(0.96); filter: drop-shadow(0 0 0 rgba(163,230,53,0)); opacity: 0.0; }
+            25% { transform: scale(1.06); filter: drop-shadow(0 0 18px rgba(163,230,53,0.45)); opacity: 1; }
+            60% { transform: scale(1.00); filter: drop-shadow(0 0 10px rgba(163,230,53,0.25)); }
+            100% { transform: scale(1.00); filter: drop-shadow(0 0 0 rgba(163,230,53,0)); }
+        }
+        .pick-pop { animation: pick-pop 900ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+        /* Live draft gravitas */
+        @keyframes pick-shine {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+        @keyframes pick-ripple {
+            0% { opacity: 0.8; transform: scale(1); }
+            100% { opacity: 0; transform: scale(1.08); }
+        }
+        .pick-impact {
+            position: relative;
+            overflow: hidden;
+            animation: pick-pop 900ms cubic-bezier(0.25, 0.85, 0.25, 1) both, pick-shine 900ms ease-out both;
+            background-image: linear-gradient(120deg, rgba(34,197,94,0) 0%, rgba(34,197,94,0.22) 30%, rgba(34,197,94,0) 60%);
+            background-size: 200% 100%;
+            box-shadow: 0 0 0 rgba(34,197,94,0);
+        }
+        .pick-impact:after {
+            content: "";
+            position: absolute;
+            inset: -2px;
+            border: 2px solid rgba(34,197,94,0.45);
+            border-radius: 0.5rem;
+            filter: drop-shadow(0 0 14px rgba(34,197,94,0.45));
+            animation: pick-ripple 900ms ease-out forwards;
+            pointer-events: none;
+        }
+
+        /* Timer effects */
+        @keyframes timer-pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.04); }
+            100% { transform: scale(1); }
+        }
+        @keyframes timer-flash {
+            0% { box-shadow: 0 0 0 rgba(56,189,248,0); }
+            30% { box-shadow: 0 0 32px rgba(56,189,248,0.45); }
+            100% { box-shadow: 0 0 0 rgba(56,189,248,0); }
+        }
+        .timer-urgent .timer-digits { color: #f87171; text-shadow: 0 0 14px rgba(248,113,113,0.45); animation: timer-pulse 800ms ease-in-out infinite; }
+        .timer-flash { animation: timer-flash 600ms ease-out; }
     </style>
 </head>
 <body class="bg-gray-950 text-gray-100 min-h-screen">
@@ -21,6 +73,7 @@
                 <button data-route="fighters" class="nav-btn px-3 py-2 rounded-md text-sm font-semibold hover:bg-gray-800">fighters</button>
                 <button data-route="odds" class="nav-btn px-3 py-2 rounded-md text-sm font-semibold hover:bg-gray-800">odds</button>
                 <button data-route="teams" class="nav-btn px-3 py-2 rounded-md text-sm font-semibold hover:bg-gray-800">teams</button>
+                <button data-route="draft" class="nav-btn px-3 py-2 rounded-md text-sm font-semibold hover:bg-gray-800">draft</button>
             </nav>
         </div>
     </header>
@@ -52,6 +105,7 @@
             fighters: 'fighters',
             odds: 'odds',
             teams: 'teams',
+            draft: 'draft',
         };
 
         async function fetchJson(url) {
@@ -473,6 +527,14 @@
             setStatus('');
         }
 
+        async function routeDraft() {
+            setStatus('draft simulator');
+            const root = document.createElement('div');
+            setView(root);
+            window.draft.renderDraftUI(root);
+            setStatus('');
+        }
+
         async function routeFighters() {
             setStatus('rendering fighters from cache...');
             const data = window.store.getJSON('fighters');
@@ -657,6 +719,7 @@
             if (r === ROUTES.fighters) return routeFighters();
             if (r === ROUTES.odds) return routeOdds();
             if (r === ROUTES.teams) return routeTeams();
+            if (r === ROUTES.draft) return routeDraft();
         }
 
         $$('.nav-btn').forEach(btn => btn.addEventListener('click', () => navigate(btn.dataset.route)));
