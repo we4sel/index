@@ -47,6 +47,13 @@
             animation: pick-ripple 900ms ease-out forwards;
             pointer-events: none;
         }
+        /* Full-page confetti overlay */
+        .confetti-overlay { position: fixed; inset: 0; pointer-events: none; z-index: 9999; overflow: hidden; }
+        .confetti-piece { position: absolute; width: 7px; height: 7px; will-change: transform, opacity; }
+        @keyframes confetti-fall {
+            0% { transform: translateY(-10vh) rotate(0); opacity: 1; }
+            100% { transform: translateY(110vh) rotate(360deg); opacity: 0; }
+        }
 
         /* Timer effects */
         @keyframes timer-pulse {
@@ -61,6 +68,7 @@
         }
         .timer-urgent .timer-digits { color: #f87171; text-shadow: 0 0 14px rgba(248,113,113,0.45); animation: timer-pulse 800ms ease-in-out infinite; }
         .timer-flash { animation: timer-flash 600ms ease-out; }
+        .fit-glow { color: #a7f3d0 !important; text-shadow: 0 0 10px rgba(45,212,191,0.55); }
     </style>
 </head>
 <body class="bg-gray-950 text-gray-100 min-h-screen">

@@ -101,7 +101,7 @@
         let ranked = rankByStatPower(pool);
         const byId = new Map(all.map(f => [f.ID, f]));
         const order = sortTeamsBySize(teams).map(([name, members]) => ({ name, members, picks: [] }));
-        if (typeof onInit === 'function') onInit({ ranked, order });
+        if (typeof onInit === 'function') onInit({ ranked, order, teams });
         if (!ranked.length || !order.length) return { ranked, order };
 
         let idx = 0;
@@ -264,20 +264,22 @@
             const idToFighter = new Map(getFighters().map(f=>[f.ID,f]));
             let volTimer = null;
 
-            function onInit({ ranked, order }){
+            function onInit({ ranked, order, teams }){
                 // fill pool list
                 ranked.forEach(f => {
                     const li = document.createElement('li');
                     li.dataset.id = String(f.ID);
                     li.className = 'flex items-center justify-between';
                     const name = document.createElement('span');
-                    name.className = 'mr-2';
+                    name.className = 'mr-2 name-label';
                     name.textContent = `${f.Name || '#'+f.ID}`;
-                    const delta = document.createElement('span');
-                    delta.className = 'delta text-xs text-gray-500 opacity-60';
-                    delta.textContent = '';
+                    const right = document.createElement('span'); right.className = 'flex items-center gap-2';
+                    const fit = document.createElement('span'); fit.className = 'fit text-[10px] px-1.5 py-0.5 rounded bg-cyan-700/30 text-cyan-300'; fit.textContent = ''; fit.style.display = 'none';
+                    const delta = document.createElement('span'); delta.className = 'delta text-xs text-gray-500 opacity-60'; delta.textContent = ''; delta.style.display = 'none';
+                    right.appendChild(fit);
+                    right.appendChild(delta);
                     li.appendChild(name);
-                    li.appendChild(delta);
+                    li.appendChild(right);
                     plist.appendChild(li);
                     poolIds.push(f.ID);
                 });
@@ -304,6 +306,7 @@
                 row.innerHTML = `<span class="text-cyan-300 font-semibold">#${pickNo} <span class="text-lime-300 font-semibold">${team.name}</span><span class="text-gray-300 font-semibold"> selects</span>&nbsp;<span class="text-lime-300 font-semibold">${fighter.Name || ('#'+fighter.ID)}</span>&nbsp;<small class="text-gray-400"><em>(${remaining} left)</em></small>`;
                 // prepend newest at top
                 if (lbox.firstChild) lbox.insertBefore(row, lbox.firstChild); else lbox.appendChild(row);
+                // (confetti moved below; only fire when glowing best-fit is picked)
                 const entry = teamUls.get(team.name);
                 if (entry) {
                     // remove previous highlight
@@ -331,9 +334,33 @@
                 // record pick for export
                 const ts = teamSummaryByName.get(team.name);
                 if (ts) ts.picks.push({ order: pickNo, id: fighter.ID, name: fighter.Name || ('#'+fighter.ID) });
+                // confetti only if this was the glowing best-fit
+                let shouldConfetti = false;
+                const el = plist.querySelector(`li[data-id="${fighter.ID}"]`);
+                if (el){
+                    const nameEl = el.querySelector('.name-label');
+                    if (nameEl && nameEl.classList.contains('fit-glow')) shouldConfetti = true;
+                }
+                if (shouldConfetti){
+                    const overlay = document.createElement('div');
+                    overlay.className = 'confetti-overlay';
+                    const colors = ['#22c55e','#06b6d4','#eab308','#f97316','#a78bfa','#f43f5e'];
+                    const pieces = 100;
+                    for (let i=0;i<pieces;i++){
+                        const p = document.createElement('span');
+                        p.className = 'confetti-piece';
+                        p.style.left = `${Math.random()*100}%`;
+                        p.style.top = '-10vh';
+                        p.style.background = colors[i%colors.length];
+                        const dur = 800 + Math.random()*900;
+                        p.style.animation = `confetti-fall ${dur}ms ease-out forwards`;
+                        overlay.appendChild(p);
+                    }
+                    document.body.appendChild(overlay);
+                    setTimeout(()=> overlay.remove(), 2000);
+                }
                 // remove picked from volatility state and list
                 poolIds = poolIds.filter(id => id !== fighter.ID);
-                const el = plist.querySelector(`li[data-id="${fighter.ID}"]`);
                 if (el) el.remove();
             }
 
@@ -379,17 +406,19 @@
                     const dSpan = el.querySelector('.delta');
                     const oldIdx = prevIndex.has(String(id)) ? prevIndex.get(String(id)) : newIdx;
                     const diff = (oldIdx - newIdx);
-                    if (dSpan){
-                        if (diff > 0){
-                            dSpan.textContent = `▲ +${diff}`;
-                            dSpan.className = 'delta text-xs text-lime-300';
-                        } else if (diff < 0){
-                            dSpan.textContent = `▼ ${Math.abs(diff)}`;
-                            dSpan.className = 'delta text-xs text-red-400';
-                        } else {
-                            dSpan.textContent = '';
-                            dSpan.className = 'delta text-xs text-gray-500 opacity-60';
-                        }
+                    if (!dSpan) return;
+                    if (diff > 0){
+                        dSpan.textContent = `▲ +${diff}`;
+                        dSpan.className = 'delta text-xs text-lime-300';
+                        dSpan.style.display = 'inline';
+                    } else if (diff < 0){
+                        dSpan.textContent = `▼ ${Math.abs(diff)}`;
+                        dSpan.className = 'delta text-xs text-red-400';
+                        dSpan.style.display = 'inline';
+                    } else {
+                        dSpan.textContent = '';
+                        dSpan.className = 'delta text-xs text-gray-500 opacity-60';
+                        dSpan.style.display = 'none';
                     }
                 });
             }
@@ -436,6 +465,52 @@
                 });
                 flipReorder(order);
                 poolIds = order;
+                // update best-fit highlight: clear all badges, glow only best among top 5
+                Array.from(plist.children).forEach(el => {
+                    const fitSpan = el.querySelector('.fit'); if (fitSpan) fitSpan.textContent = '';
+                    const nameEl = el.querySelector('.name-label'); if (nameEl) nameEl.classList.remove('fit-glow');
+                });
+                const currentTeamName = Array.from(teamUls.keys())[0];
+                const currentTeam = teamUls.get(currentTeamName);
+                if (currentTeam){
+                    let sum = {Strength:0, Speed:0, Endurance:0, Technique:0};
+                    let count = 0;
+                    const teamEntry = draftSummary.teams.find(t=>t.name===currentTeamName);
+                    if (teamEntry){
+                        teamEntry.picks.forEach(p => {
+                            const f = idToFighter.get(p.id);
+                            if (f){ sum.Strength+=safeNum(f.Strength); sum.Speed+=safeNum(f.Speed); sum.Endurance+=safeNum(f.Endurance); sum.Technique+=safeNum(f.Technique); count++; }
+                        });
+                    }
+                    const C = {
+                        Strength: count? sum.Strength/count : 0,
+                        Speed: count? sum.Speed/count : 0,
+                        Endurance: count? sum.Endurance/count : 0,
+                        Technique: count? sum.Technique/count : 0,
+                    };
+                    const N = {
+                        Strength: Math.max(0, 100 - C.Strength),
+                        Speed: Math.max(0, 100 - C.Speed),
+                        Endurance: Math.max(0, 100 - C.Endurance),
+                        Technique: Math.max(0, 100 - C.Technique),
+                    };
+                    const weightSum = N.Strength+N.Speed+N.Endurance+N.Technique || 1;
+                    const topEls = Array.from(plist.children).slice(0,5);
+                    let best = null; let bestScore = -1;
+                    topEls.forEach(el => {
+                        const id = Number(el.dataset.id);
+                        const f = idToFighter.get(id);
+                        if (!f) return;
+                        const score = (
+                            N.Strength*(safeNum(f.Strength)/100) +
+                            N.Speed*(safeNum(f.Speed)/100) +
+                            N.Endurance*(safeNum(f.Endurance)/100) +
+                            N.Technique*(safeNum(f.Technique)/100)
+                        )/weightSum;
+                        if (score > bestScore){ bestScore = score; best = el; }
+                    });
+                    if (best){ const nameEl = best.querySelector('.name-label'); if (nameEl) nameEl.classList.add('fit-glow'); }
+                }
             }
 
             // Randomized cadence between 1000–3000ms so changes aren't synchronized
