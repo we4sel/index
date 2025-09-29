@@ -95,10 +95,11 @@
         return { ranked, order };
     }
 
-    async function runDraftLive(rounds, onInit, onPick, delayMs=150) {
+    async function runDraftLive(rounds, onInit, onPick, delayMs=150, getTopFighterId) {
         const all = getFighters();
         const { pool, teams } = classifyFighters(all);
-        const ranked = rankByStatPower(pool);
+        let ranked = rankByStatPower(pool);
+        const byId = new Map(all.map(f => [f.ID, f]));
         const order = sortTeamsBySize(teams).map(([name, members]) => ({ name, members, picks: [] }));
         if (typeof onInit === 'function') onInit({ ranked, order });
         if (!ranked.length || !order.length) return { ranked, order };
@@ -111,7 +112,17 @@
             const bucket = order.filter(t => (t.members.length + t.picks.length) === minSize);
             for (let i = 0; i < bucket.length && idx < ranked.length; i++) {
                 const team = bucket[i];
-                const fighter = ranked[idx++];
+                let fighter;
+                if (typeof getTopFighterId === 'function') {
+                    const topId = getTopFighterId();
+                    fighter = byId.get(topId) || ranked[0];
+                    // remove chosen from ranked to prevent duplicates later
+                    ranked = ranked.filter(f => f.ID !== fighter.ID);
+                } else {
+                    fighter = ranked[idx];
+                    // keep ranked as-is; natural idx progress
+                }
+                idx++;
                 team.picks.push(fighter);
                 if (typeof onPick === 'function') onPick({ pickNo, team, fighter, remaining: ranked.length - idx });
                 pickNo++;
@@ -178,7 +189,7 @@
         timer.setDurationMs(10 * 1000); // default 10 seconds
 
         const results = document.createElement('div');
-        results.className = 'grid lg:grid-cols-3 gap-6';
+        results.className = 'grid gap-6 lg:grid-cols-[260px_1fr_260px]';
 
         // Estimator live updates without pressing GO
         tIn.addEventListener('input', updateEstimate);
@@ -213,22 +224,24 @@
 
             // Pool column
             const poolCard = document.createElement('div');
-            poolCard.className = 'rounded-lg border border-gray-800 bg-gray-900/50 p-3';
-            const ph = document.createElement('div'); ph.className = 'font-semibold mb-2'; ph.textContent = `Draft pool ranking`;
+            poolCard.className = 'rounded-lg border border-gray-800 bg-gray-900/50 p-3 text-sm';
+            const ph = document.createElement('div'); ph.className = 'font-semibold mb-2'; ph.textContent = `Live draft pool standings`;
             poolCard.appendChild(ph);
-            const plist = document.createElement('ol'); plist.className = 'text-sm text-gray-200 space-y-1 list-decimal list-inside';
+            const eventLine = document.createElement('div'); eventLine.className = 'text-xs text-cyan-300 mb-2'; eventLine.textContent = '';
+            poolCard.appendChild(eventLine);
+            const plist = document.createElement('ol'); plist.className = 'relative text-sm text-gray-200 space-y-1 list-decimal list-inside';
             poolCard.appendChild(plist);
 
             // Live log column
             const liveCard = document.createElement('div');
-            liveCard.className = 'rounded-lg border border-gray-800 bg-gray-900/50 p-3';
-            const lh = document.createElement('div'); lh.className = 'font-semibold mb-2'; lh.textContent = 'Live draft';
-            const lbox = document.createElement('div'); lbox.className = 'text-sm text-gray-200 space-y-1';
+            liveCard.className = 'rounded-lg border border-gray-800 bg-gray-900/50 p-4';
+            const lh = document.createElement('div'); lh.className = 'font-semibold mb-3 text-lg md:text-xl'; lh.textContent = 'Live draft';
+            const lbox = document.createElement('div'); lbox.className = 'text-base md:text-lg text-gray-200 space-y-2';
             liveCard.appendChild(lh); liveCard.appendChild(lbox);
 
             // Results column (by team)
             const draftCard = document.createElement('div');
-            draftCard.className = 'rounded-lg border border-gray-800 bg-gray-900/50 p-3';
+            draftCard.className = 'rounded-lg border border-gray-800 bg-gray-900/50 p-3 text-sm';
             const dh = document.createElement('div'); dh.className = 'font-semibold mb-2'; dh.textContent = 'Round-robin draft results';
             const dwrap = document.createElement('div'); dwrap.className = 'space-y-4';
             draftCard.appendChild(dh); draftCard.appendChild(dwrap);
@@ -238,10 +251,36 @@
             results.appendChild(draftCard);
 
             const teamUls = new Map();
+            // Draft results summary for export
+            const draftSummary = {
+                startedAt: new Date().toISOString(),
+                tickerSeconds: seconds,
+                startTimeLocal: startIn.value || null,
+                teams: []
+            };
+            const teamSummaryByName = new Map();
+            // Volatility engine state
+            let poolIds = [];
+            const idToFighter = new Map(getFighters().map(f=>[f.ID,f]));
+            let volTimer = null;
 
             function onInit({ ranked, order }){
                 // fill pool list
-                ranked.forEach(f => { const li = document.createElement('li'); li.textContent = `${f.Name || '#'+f.ID}`; plist.appendChild(li); });
+                ranked.forEach(f => {
+                    const li = document.createElement('li');
+                    li.dataset.id = String(f.ID);
+                    li.className = 'flex items-center justify-between';
+                    const name = document.createElement('span');
+                    name.className = 'mr-2';
+                    name.textContent = `${f.Name || '#'+f.ID}`;
+                    const delta = document.createElement('span');
+                    delta.className = 'delta text-xs text-gray-500 opacity-60';
+                    delta.textContent = '';
+                    li.appendChild(name);
+                    li.appendChild(delta);
+                    plist.appendChild(li);
+                    poolIds.push(f.ID);
+                });
                 // prepare team sections
                 order.forEach(t => {
                     const sec = document.createElement('div');
@@ -253,13 +292,16 @@
                     sec.appendChild(th); sec.appendChild(tl); sec.appendChild(list);
                     dwrap.appendChild(sec);
                     teamUls.set(t.name, { ul: list, tl, base: t.members.length, picks: 0, count, sec });
+                    const entry = { name: t.name, before: t.members.length, picks: [] };
+                    draftSummary.teams.push(entry);
+                    teamSummaryByName.set(t.name, entry);
                 });
             }
 
             function onPick({ pickNo, team, fighter, remaining }){
                 const row = document.createElement('div');
                 row.className = 'px-2 py-1 rounded bg-white/5 border border-gray-700 pick-impact';
-                row.textContent = `#${pickNo} ${team.name} select ${fighter.Name || ('#'+fighter.ID)} (${remaining} left)`;
+                row.innerHTML = `<span class="text-cyan-300 font-semibold">#${pickNo} <span class="text-lime-300 font-semibold">${team.name}</span><span class="text-gray-300 font-semibold"> selects</span>&nbsp;<span class="text-lime-300 font-semibold">${fighter.Name || ('#'+fighter.ID)}</span>&nbsp;<small class="text-gray-400"><em>(${remaining} left)</em></small>`;
                 // prepend newest at top
                 if (lbox.firstChild) lbox.insertBefore(row, lbox.firstChild); else lbox.appendChild(row);
                 const entry = teamUls.get(team.name);
@@ -286,9 +328,144 @@
                 const roundText = `Round ${pickNo}`;
                 timer.setHeadline(fighter.Name || ('#'+fighter.ID), `${team.name} ${roundText} pick`);
                 timer.reset();
+                // record pick for export
+                const ts = teamSummaryByName.get(team.name);
+                if (ts) ts.picks.push({ order: pickNo, id: fighter.ID, name: fighter.Name || ('#'+fighter.ID) });
+                // remove picked from volatility state and list
+                poolIds = poolIds.filter(id => id !== fighter.ID);
+                const el = plist.querySelector(`li[data-id="${fighter.ID}"]`);
+                if (el) el.remove();
             }
 
-            await runDraftLive(rounds, onInit, onPick, intervalMs);
+            // Volatility tick: event carousel with FLIP animations
+            const EVENTS = [
+                { key: 'RPS', score: (a,b) => Math.sign(Math.random()-0.5) },
+                { key: 'Sprint', score: (a,b)=> Math.sign(safeNum(a.Speed)-safeNum(b.Speed)) },
+                { key: 'Heavy Bag', score: (a,b)=> Math.sign(safeNum(a.Strength)-safeNum(b.Strength)) },
+                { key: 'Marathon', score: (a,b)=> Math.sign(safeNum(a.Endurance)-safeNum(b.Endurance)) },
+                { key: 'Sparring', score: (a,b)=> Math.sign(safeNum(a.Technique)-safeNum(b.Technique)) },
+            ];
+            function pickEvent(){ return EVENTS[Math.floor(Math.random()*EVENTS.length)]; }
+
+            function flipReorder(newOrder){
+                const items = Array.from(plist.children);
+                const first = new Map(items.map(el=>[el.dataset.id, el.getBoundingClientRect()]));
+                const prevIndex = new Map(items.map((el, idx) => [el.dataset.id, idx]));
+                // reorder DOM
+                newOrder.forEach(id => {
+                    const el = plist.querySelector(`li[data-id="${id}"]`);
+                    if (el) plist.appendChild(el);
+                });
+                const afterItems = Array.from(plist.children);
+                afterItems.forEach(el => {
+                    const a = first.get(el.dataset.id);
+                    const b = el.getBoundingClientRect();
+                    if (!a) return;
+                    const dx = a.left - b.left;
+                    const dy = a.top - b.top;
+                    if (dx || dy){
+                        el.style.transform = `translate(${dx}px,${dy}px)`;
+                        el.style.transition = 'transform 0s';
+                        requestAnimationFrame(()=>{
+                            el.style.transform = '';
+                            el.style.transition = 'transform 450ms cubic-bezier(0.2, 0.8, 0.2, 1)';
+                        });
+                    }
+                });
+                // update delta badges
+                newOrder.forEach((id, newIdx) => {
+                    const el = plist.querySelector(`li[data-id="${id}"]`);
+                    if (!el) return;
+                    const dSpan = el.querySelector('.delta');
+                    const oldIdx = prevIndex.has(String(id)) ? prevIndex.get(String(id)) : newIdx;
+                    const diff = (oldIdx - newIdx);
+                    if (dSpan){
+                        if (diff > 0){
+                            dSpan.textContent = `▲ +${diff}`;
+                            dSpan.className = 'delta text-xs text-lime-300';
+                        } else if (diff < 0){
+                            dSpan.textContent = `▼ ${Math.abs(diff)}`;
+                            dSpan.className = 'delta text-xs text-red-400';
+                        } else {
+                            dSpan.textContent = '';
+                            dSpan.className = 'delta text-xs text-gray-500 opacity-60';
+                        }
+                    }
+                });
+            }
+
+            let ratingById = new Map();
+
+            function volatilityTick(){
+                if (poolIds.length <= 1) return;
+                const ev = pickEvent();
+                eventLine.textContent = `current event: ${ev.key}`;
+                // initialize ratings lazily to baseline if empty
+                if (ratingById.size === 0) {
+                    const els = Array.from(plist.children);
+                    els.forEach((el, idx) => ratingById.set(Number(el.dataset.id), els.length - idx));
+                }
+                // gentle decay to compress gaps so swaps can happen
+                poolIds.forEach(id => {
+                    const r = (ratingById.get(id) || 0);
+                    ratingById.set(id, r * 0.985);
+                });
+                // compute small rating bumps and reorder using persistent ratings
+                const n = poolIds.length;
+                // Jostle just a couple of fighters for a more organic feel
+                const pairs = 2 + Math.floor(Math.random()*2); // 2-3 pairs
+                for (let p=0;p<pairs;p++){
+                    const i = Math.floor(Math.random()*n);
+                    let j = Math.floor(Math.random()*n); if (j===i) j=(j+1)%n;
+                    const A = idToFighter.get(poolIds[i]);
+                    const B = idToFighter.get(poolIds[j]);
+                    const out = ev.score(A,B);
+                    const step = 2;
+                    if (out>0){
+                        ratingById.set(A.ID, (ratingById.get(A.ID)||0)+step);
+                        ratingById.set(B.ID, (ratingById.get(B.ID)||0)-step);
+                    } else if (out<0){
+                        ratingById.set(A.ID, (ratingById.get(A.ID)||0)-step);
+                        ratingById.set(B.ID, (ratingById.get(B.ID)||0)+step);
+                    }
+                }
+                const order = poolIds.slice().sort((a,b)=> {
+                    const rb = (ratingById.get(b)||0) + (Math.random()-0.5)*0.25;
+                    const ra = (ratingById.get(a)||0) + (Math.random()-0.5)*0.25;
+                    return rb - ra;
+                });
+                flipReorder(order);
+                poolIds = order;
+            }
+
+            // Randomized cadence between 1000–3000ms so changes aren't synchronized
+            function scheduleVol(){
+                const ms = 500 + Math.floor(Math.random()*2500);
+                volTimer = setTimeout(() => { volatilityTick(); scheduleVol(); }, ms);
+            }
+            scheduleVol();
+
+            function getTopFromDom(){
+                const first = plist.querySelector('li');
+                return first ? Number(first.dataset.id) : (poolIds[0] || null);
+            }
+
+            await runDraftLive(rounds, onInit, onPick, intervalMs, getTopFromDom);
+            // export results JSON
+            draftSummary.completedAt = new Date().toISOString();
+            function downloadJSON(filename, data){
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 0);
+            }
+            const fname = `draft_${new Date().toISOString().replace(/[:.]/g,'-')}.json`;
+            downloadJSON(fname, draftSummary);
+            if (volTimer) clearTimeout(volTimer);
         });
 
         // mount order: controls (already at top), timer (already appended), results at the bottom
