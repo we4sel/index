@@ -49,10 +49,10 @@
         }
         /* Full-page confetti overlay */
         .confetti-overlay { position: fixed; inset: 0; pointer-events: none; z-index: 9999; overflow: hidden; }
-        .confetti-piece { position: absolute; width: 7px; height: 7px; will-change: transform, opacity; }
+        .confetti-piece { position: absolute; will-change: transform, opacity; border-radius: 1px; }
         @keyframes confetti-fall {
             0% { transform: translateY(-10vh) rotate(0); opacity: 1; }
-            100% { transform: translateY(110vh) rotate(360deg); opacity: 0; }
+            100% { transform: translateY(130vh) rotate(720deg); opacity: 0; }
         }
 
         /* Timer effects */
@@ -72,7 +72,7 @@
     </style>
 </head>
 <body class="bg-gray-950 text-gray-100 min-h-screen">
-    <header class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-10">
+    <header class="border-b border-gray-800 bg-gray-900/80 backdrop-blur">
         <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
             <h1 class="text-xl font-bold">🥊 we4sel's bookie tools</h1>
             <nav class="flex items-center gap-2">

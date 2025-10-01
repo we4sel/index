@@ -104,27 +104,26 @@
         if (typeof onInit === 'function') onInit({ ranked, order, teams });
         if (!ranked.length || !order.length) return { ranked, order };
 
-        let idx = 0;
         let pickNo = 1;
-        while (idx < ranked.length) {
+        while (ranked.length > 0) {
             const sizes = order.map(t => t.members.length + t.picks.length);
             const minSize = Math.min.apply(null, sizes);
             const bucket = order.filter(t => (t.members.length + t.picks.length) === minSize);
-            for (let i = 0; i < bucket.length && idx < ranked.length; i++) {
+            for (let i = 0; i < bucket.length && ranked.length > 0; i++) {
                 const team = bucket[i];
                 let fighter;
                 if (typeof getTopFighterId === 'function') {
                     const topId = getTopFighterId();
                     fighter = byId.get(topId) || ranked[0];
                     // remove chosen from ranked to prevent duplicates later
-                    ranked = ranked.filter(f => f.ID !== fighter.ID);
+                    const remIdx = ranked.findIndex(f => f.ID === fighter.ID);
+                    if (remIdx >= 0) { ranked.splice(remIdx, 1); } else { ranked.shift(); }
                 } else {
-                    fighter = ranked[idx];
-                    // keep ranked as-is; natural idx progress
+                    // consume from the front to advance until pool is empty
+                    fighter = ranked.shift();
                 }
-                idx++;
                 team.picks.push(fighter);
-                if (typeof onPick === 'function') onPick({ pickNo, team, fighter, remaining: ranked.length - idx });
+                if (typeof onPick === 'function') onPick({ pickNo, team, fighter, remaining: ranked.length });
                 pickNo++;
                 if (delayMs > 0) await sleep(delayMs);
             }
@@ -177,7 +176,7 @@
             const baseStart = startIn.value ? new Date(startIn.value).getTime() : Date.now();
             const finish = new Date(baseStart + total*1000);
             const finishStr = finish.toLocaleString();
-            est.textContent = `Est. duration for ${picks} picks: ${durationStr} • Est. finish ${startIn.value ? '' : '(if start now) '}${finishStr}`;
+            est.innerHTML = `Est. duration for ${picks} picks: ${durationStr} • Est. finish ${startIn.value ? '' : '(if start now) '}${finishStr} Time between picks: ${seconds} seconds<br><br>`;
         }
 
         // Fancy countdown banner (placed below controls so controls are off-screen when streaming)
@@ -344,20 +343,23 @@
                 if (shouldConfetti){
                     const overlay = document.createElement('div');
                     overlay.className = 'confetti-overlay';
-                    const colors = ['#22c55e','#06b6d4','#eab308','#f97316','#a78bfa','#f43f5e'];
-                    const pieces = 100;
+                    const colors = ['#22c55e','#06b6d4','#eab308','#f97316','#a78bfa','#f43f5e','#34d399','#60a5fa'];
+                    const pieces = 220;
                     for (let i=0;i<pieces;i++){
                         const p = document.createElement('span');
                         p.className = 'confetti-piece';
+                        const size = 4 + Math.random()*8; // 4-12px
+                        p.style.width = `${size}px`; p.style.height = `${size}px`;
                         p.style.left = `${Math.random()*100}%`;
                         p.style.top = '-10vh';
                         p.style.background = colors[i%colors.length];
-                        const dur = 800 + Math.random()*900;
+                        const dur = 1400 + Math.random()*1400; // 1.4 - 2.8s
                         p.style.animation = `confetti-fall ${dur}ms ease-out forwards`;
+                        p.style.opacity = '0.95';
                         overlay.appendChild(p);
                     }
                     document.body.appendChild(overlay);
-                    setTimeout(()=> overlay.remove(), 2000);
+                    setTimeout(()=> overlay.remove(), 3200);
                 }
                 // remove picked from volatility state and list
                 poolIds = poolIds.filter(id => id !== fighter.ID);
@@ -515,7 +517,7 @@
 
             // Randomized cadence between 1000–3000ms so changes aren't synchronized
             function scheduleVol(){
-                const ms = 500 + Math.floor(Math.random()*2500);
+                const ms = 250 + Math.floor(Math.random()*2000);
                 volTimer = setTimeout(() => { volatilityTick(); scheduleVol(); }, ms);
             }
             scheduleVol();
