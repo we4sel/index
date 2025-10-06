@@ -226,6 +226,20 @@
             return aRate / denom;
         }
 
+        function computeTotalWinChance(fA, fB) {
+            let total = 0;
+            let samples = 0;
+            STAT_KEYS.forEach(k => {
+                const a = safeNum(fA?.[k]);
+                const b = safeNum(fB?.[k]);
+                const denom = a + b;
+                total += denom > 0 ? (a / denom) : 0.5;
+                samples += 1;
+            });
+            if (samples === 0) return 0.5;
+            return total / samples;
+        }
+
         function toAmericanOdds(p) {
             if (!Number.isFinite(p)) return '';
             const pc = Math.min(Math.max(p, 0.01), 0.99);
@@ -291,6 +305,8 @@
             const pStatB = 1 - pStatA;
             const pRecA = computeRecordBasedProb(fA, fB);
             const pRecB = 1 - pRecA;
+            const pTotalA = computeTotalWinChance(fA, fB);
+            const pTotalB = 1 - pTotalA;
 
             const card = document.createElement('div');
             card.className = 'my-6 p-4 rounded-xl border border-gray-800 bg-gray-900/50';
@@ -318,6 +334,12 @@
                 <div class="text-3xl font-extrabold mt-1 ${pStatA >= pStatB ? 'text-cyan-300' : 'text-orange-300'}">${(Math.max(pStatA, pStatB) * 100).toFixed(1)}%</div>
                 <div class="text-xs text-gray-400 mt-2">${pStatA >= pStatB ? (fA?.Name || 'F1') : (fB?.Name || 'F2')} favored</div>
                 <div class="h-px bg-gray-700 my-3"></div>
+                <div class="text-gray-300 text-xs font-semibold">total win chance</div>
+                <div class="mt-1 text-sm space-y-1">
+                    <div class="flex items-center justify-between"><span>${fA?.Name || 'F1'}</span><span>${(pTotalA*100).toFixed(1)}%</span></div>
+                    <div class="flex items-center justify-between"><span>${fB?.Name || 'F2'}</span><span>${(pTotalB*100).toFixed(1)}%</span></div>
+                </div>
+                <div class="h-px bg-gray-700 my-3"></div>
                 <div class="text-gray-300 text-xs font-semibold">record odds</div>
                 <div class="mt-1 text-sm">
                     <div class="flex items-center justify-between"><span>${fA?.Name || 'F1'}</span><span>${(pRecA*100).toFixed(1)}% <span class="text-gray-400">(${toAmericanOdds(pRecA)})</span></span></div>
@@ -343,6 +365,8 @@
             const pStatB = 1 - pStatA;
             const pRecA = computeRecordBasedProb(fA, fB);
             const pRecB = 1 - pRecA;
+            const pTotalA = computeTotalWinChance(fA, fB);
+            const pTotalB = 1 - pTotalA;
 
             const card = document.createElement('div');
             card.className = 'my-6 p-6 rounded-xl border border-gray-800 bg-gray-900/60 shadow-lg';
@@ -363,6 +387,12 @@
                 <div class="text-gray-300 text-xs font-semibold">stat edge</div>
                 <div class="text-3xl font-extrabold mt-1 ${pStatA >= pStatB ? 'text-cyan-300' : 'text-orange-300'}">${(Math.max(pStatA, pStatB) * 100).toFixed(1)}%</div>
                 <div class="text-xs text-gray-400 mt-2">${pStatA >= pStatB ? (fA?.Name || 'F1') : (fB?.Name || 'F2')} favored</div>
+                <div class="h-px bg-gray-700 my-3"></div>
+                <div class="text-gray-300 text-xs font-semibold mb-2">total win chance</div>
+                <div class="space-y-1 text-sm">
+                    <div class="flex items-center justify-between"><span>${fA?.Name || 'F1'}</span><span>${(pTotalA*100).toFixed(1)}%</span></div>
+                    <div class="flex items-center justify-between"><span>${fB?.Name || 'F2'}</span><span>${(pTotalB*100).toFixed(1)}%</span></div>
+                </div>
                 <div class="h-px bg-gray-700 my-3"></div>
                 <div class="text-gray-300 text-xs font-semibold mb-2">record odds</div>
                 <div class="space-y-1 text-sm">
