@@ -268,6 +268,7 @@
                 summary.avgStats[k] = fighters.length ? totals[k] / fighters.length : 0;
             });
             summary.winRate = summary.fights > 0 ? (summary.wins + 0.5 * summary.draws) / summary.fights : 0;
+            summary.avgStatScore = STAT_KEYS.reduce((acc, k) => acc + (summary.avgStats[k] || 0), 0) / STAT_KEYS.length;
             return summary;
         }
 
@@ -727,7 +728,7 @@
                 const teamRaw = (f.Team || '').trim();
                 const lc = teamRaw.toLowerCase();
                 const isFree = !teamRaw || lc === 'free agent' || lc === 'free agents' || lc === 'fa';
-                const isCustom = f.IsCustom || lc === 'custom fighter' || lc === 'custom fighters' || lc === 'custom';
+                const isCustom = lc === 'custom fighter' || lc === 'custom fighters' || lc === 'custom';
                 if (isCustom) {
                     customFighters.push(f);
                 } else if (isFree) {
@@ -739,28 +740,87 @@
             });
 
             const teamSummaries = Array.from(actualTeams.entries()).map(([name, list]) => summarizeTeam(name, list));
-            teamSummaries.sort((a, b) => {
-                if (b.winRate !== a.winRate) return b.winRate - a.winRate;
-                if (b.wins !== a.wins) return b.wins - a.wins;
-                return a.name.localeCompare(b.name);
-            });
 
             const container = document.createElement('div');
             container.className = 'space-y-6';
 
-            teamSummaries.forEach((summary, index) => {
-                container.appendChild(buildTeamCard(summary, { highlight: index === 0 }));
+            const controlsBar = document.createElement('div');
+            controlsBar.className = 'flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3';
+
+            const heading = document.createElement('div');
+            heading.className = 'text-lg font-semibold text-gray-200';
+            heading.textContent = 'team standings';
+            controlsBar.appendChild(heading);
+
+            const sortWrap = document.createElement('label');
+            sortWrap.className = 'flex items-center gap-2 text-sm text-gray-300 bg-gray-900/60 border border-gray-800 rounded-lg px-3 py-2';
+            const sortText = document.createElement('span');
+            sortText.className = 'uppercase tracking-wide text-xs text-gray-400';
+            sortText.textContent = 'sort by';
+            const sortSelect = document.createElement('select');
+            sortSelect.className = 'bg-transparent text-sm font-semibold focus:outline-none';
+            [
+                { value: 'winRate', label: 'Win rate (desc)' },
+                { value: 'wins', label: 'Total wins (desc)' },
+                { value: 'fights', label: 'Total fights (desc)' },
+                { value: 'avgStat', label: 'Average stats (desc)' },
+            ].forEach(opt => {
+                const option = document.createElement('option');
+                option.value = opt.value;
+                option.textContent = opt.label;
+                sortSelect.appendChild(option);
             });
+            sortWrap.appendChild(sortText);
+            sortWrap.appendChild(sortSelect);
+            controlsBar.appendChild(sortWrap);
+            container.appendChild(controlsBar);
 
-            if (freeAgents.length) {
-                const summary = summarizeTeam('free agents', freeAgents);
-                container.appendChild(buildTeamCard(summary));
+            const cardsWrap = document.createElement('div');
+            cardsWrap.className = 'space-y-6';
+            container.appendChild(cardsWrap);
+
+            function sortTeams(mode) {
+                const sorted = teamSummaries.slice();
+                sorted.sort((a, b) => {
+                    if (mode === 'wins') {
+                        if (b.wins !== a.wins) return b.wins - a.wins;
+                        if (b.winRate !== a.winRate) return b.winRate - a.winRate;
+                    } else if (mode === 'fights') {
+                        if (b.fights !== a.fights) return b.fights - a.fights;
+                        if (b.wins !== a.wins) return b.wins - a.wins;
+                    } else if (mode === 'avgStat') {
+                        if (b.avgStatScore !== a.avgStatScore) return b.avgStatScore - a.avgStatScore;
+                        if (b.winRate !== a.winRate) return b.winRate - a.winRate;
+                    } else {
+                        if (b.winRate !== a.winRate) return b.winRate - a.winRate;
+                        if (b.wins !== a.wins) return b.wins - a.wins;
+                    }
+                    return a.name.localeCompare(b.name);
+                });
+                return sorted;
             }
 
-            if (customFighters.length) {
-                const summary = summarizeTeam('custom fighters', customFighters);
-                container.appendChild(buildTeamCard(summary));
+            function renderTeams() {
+                const mode = sortSelect.value;
+                const sorted = sortTeams(mode);
+                cardsWrap.innerHTML = '';
+                sorted.forEach((summary, index) => {
+                    cardsWrap.appendChild(buildTeamCard(summary, { highlight: index === 0 }));
+                });
+
+                if (freeAgents.length) {
+                    const summary = summarizeTeam('free agents', freeAgents);
+                    cardsWrap.appendChild(buildTeamCard(summary));
+                }
+
+                if (customFighters.length) {
+                    const summary = summarizeTeam('custom fighters', customFighters);
+                    cardsWrap.appendChild(buildTeamCard(summary));
+                }
             }
+
+            sortSelect.addEventListener('change', renderTeams);
+            renderTeams();
 
             setView(container);
             setStatus('');
