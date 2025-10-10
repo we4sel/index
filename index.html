@@ -796,6 +796,32 @@
             controlsBar.appendChild(sortWrap);
             container.appendChild(controlsBar);
 
+            const captainsCard = document.createElement('div');
+            captainsCard.className = 'rounded-xl border border-gray-800 bg-gray-900/70 p-5 shadow-md';
+            captainsCard.innerHTML = `
+                <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+                    <h2 class="text-lg font-semibold text-gray-200">team captains</h2>
+                    <div class="text-xs text-gray-400">click a row to open fighter profile</div>
+                </div>
+                <div class="overflow-x-auto rounded-lg border border-gray-800">
+                    <table class="min-w-full text-sm text-left">
+                        <thead class="bg-gray-900/80 text-gray-300">
+                            <tr>
+                                <th class="px-3 py-2 font-semibold">team</th>
+                                <th class="px-3 py-2 font-semibold">captain</th>
+                                <th class="px-3 py-2 font-semibold">record</th>
+                                <th class="px-3 py-2 font-semibold">win rate</th>
+                                <th class="px-3 py-2 font-semibold">avg stats</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-800"></tbody>
+                    </table>
+                </div>
+            `;
+            const captainsTable = captainsCard.querySelector('table');
+            const captainsBody = captainsCard.querySelector('tbody');
+            container.appendChild(captainsCard);
+
             const cardsWrap = document.createElement('div');
             cardsWrap.className = 'space-y-6';
             container.appendChild(cardsWrap);
@@ -825,8 +851,26 @@
                 const mode = sortSelect.value;
                 const sorted = sortTeams(mode);
                 cardsWrap.innerHTML = '';
+                captainsBody.innerHTML = '';
                 sorted.forEach((summary, index) => {
                     cardsWrap.appendChild(buildTeamCard(summary, { highlight: index === 0 }));
+                    if (summary.mvp) {
+                        const row = document.createElement('tr');
+                        row.className = 'hover:bg-gray-800/40 cursor-pointer';
+                        row.innerHTML = `
+                            <td class="px-3 py-2 text-gray-200">${summary.name}</td>
+                            <td class="px-3 py-2 text-green-300 font-semibold">${summary.mvp.Name || `#${summary.mvp.ID}`}</td>
+                            <td class="px-3 py-2 text-gray-300">${safeNum(summary.mvp?.Wins)}-${safeNum(summary.mvp?.Losses)}-${safeNum(summary.mvp?.Draws)}</td>
+                            <td class="px-3 py-2 text-gray-300">${(summary.winRate * 100).toFixed(1)}%</td>
+                            <td class="px-3 py-2 text-gray-300">${summary.avgStatScore.toFixed(1)}</td>
+                        `;
+                        row.addEventListener('click', () => {
+                            if (summary.mvp?.ID) {
+                                window.open(`https://spoodblort.com/fighter/${encodeURIComponent(summary.mvp.ID)}`, '_blank', 'noopener');
+                            }
+                        });
+                        captainsBody.appendChild(row);
+                    }
                 });
 
                 if (freeAgents.length) {
@@ -837,6 +881,10 @@
                 if (customFighters.length) {
                     const summary = summarizeTeam('custom fighters', customFighters);
                     cardsWrap.appendChild(buildTeamCard(summary));
+                }
+
+                if (window.tableSort && typeof window.tableSort.makeTableSortable === 'function') {
+                    window.tableSort.makeTableSortable(captainsTable);
                 }
             }
 
