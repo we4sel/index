@@ -269,6 +269,17 @@
             });
             summary.winRate = summary.fights > 0 ? (summary.wins + 0.5 * summary.draws) / summary.fights : 0;
             summary.avgStatScore = STAT_KEYS.reduce((acc, k) => acc + (summary.avgStats[k] || 0), 0) / STAT_KEYS.length;
+            summary.mvp = fighters.reduce((best, curr) => {
+                const bestScore = best ? (safeNum(best.Wins) + 0.5 * safeNum(best.Draws)) : -Infinity;
+                const currScore = safeNum(curr?.Wins) + 0.5 * safeNum(curr?.Draws);
+                if (currScore > bestScore) return curr;
+                if (currScore === bestScore) {
+                    const bestAvg = best ? (STAT_KEYS.reduce((acc, k) => acc + safeNum(best?.[k]), 0) / STAT_KEYS.length) : -Infinity;
+                    const currAvg = STAT_KEYS.reduce((acc, k) => acc + safeNum(curr?.[k]), 0) / STAT_KEYS.length;
+                    if (currAvg > bestAvg) return curr;
+                }
+                return best;
+            }, null);
             return summary;
         }
 
@@ -342,10 +353,11 @@
 
             rows.forEach(f => {
                 const tr = document.createElement('tr');
-                tr.className = 'hover:bg-gray-800/40';
+                const isMvp = summary.mvp && summary.mvp.ID === f.ID;
+                tr.className = `hover:bg-gray-800/40 ${isMvp ? 'bg-green-600/10 border border-green-500/40' : ''}`;
                 const record = `${safeNum(f?.Wins)}-${safeNum(f?.Losses)}-${safeNum(f?.Draws)}`;
                 tr.innerHTML = `
-                    <td class="px-3 py-2">${f?.Name || `#${f?.ID}`}</td>
+                    <td class="px-3 py-2">${f?.Name || `#${f?.ID}`} ${isMvp ? '<span class="ml-2 text-xs font-bold uppercase text-green-300">captain</span>' : ''}</td>
                     <td class="px-3 py-2 text-gray-300">${record}</td>
                     <td class="px-3 py-2 text-gray-200">${safeNum(f?.Strength)}</td>
                     <td class="px-3 py-2 text-gray-200">${safeNum(f?.Speed)}</td>
