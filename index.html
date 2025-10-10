@@ -240,6 +240,128 @@
             return total / samples;
         }
 
+        function summarizeTeam(name, fighters) {
+            const summary = {
+                name,
+                fighters: fighters.slice(),
+                wins: 0,
+                losses: 0,
+                draws: 0,
+                fights: 0,
+                winRate: 0,
+                avgStats: {},
+            };
+            const totals = { Strength: 0, Speed: 0, Endurance: 0, Technique: 0 };
+            fighters.forEach(f => {
+                const wins = safeNum(f?.Wins);
+                const losses = safeNum(f?.Losses);
+                const draws = safeNum(f?.Draws);
+                summary.wins += wins;
+                summary.losses += losses;
+                summary.draws += draws;
+                summary.fights += wins + losses + draws;
+                STAT_KEYS.forEach(k => {
+                    totals[k] += safeNum(f?.[k]);
+                });
+            });
+            STAT_KEYS.forEach(k => {
+                summary.avgStats[k] = fighters.length ? totals[k] / fighters.length : 0;
+            });
+            summary.winRate = summary.fights > 0 ? (summary.wins + 0.5 * summary.draws) / summary.fights : 0;
+            return summary;
+        }
+
+        function buildTeamCard(summary, options = {}) {
+            const { highlight = false } = options;
+            const card = document.createElement('section');
+            card.className = 'rounded-xl border border-gray-800 bg-gray-900/60 p-5 shadow-md space-y-4';
+            if (highlight) {
+                card.classList.add('ring-2', 'ring-amber-400/60');
+            }
+
+            const header = document.createElement('div');
+            header.className = 'flex flex-wrap items-center justify-between gap-3';
+
+            const titleWrap = document.createElement('div');
+            titleWrap.className = 'space-y-1';
+            const title = document.createElement('h2');
+            title.className = 'text-xl font-bold';
+            title.textContent = summary.name;
+            const subtitle = document.createElement('div');
+            subtitle.className = 'text-sm text-gray-400';
+            subtitle.textContent = `${summary.wins}-${summary.losses}-${summary.draws} • ${(summary.winRate * 100).toFixed(1)}% win rate • ${summary.fighters.length} fighters`;
+            titleWrap.appendChild(title);
+            titleWrap.appendChild(subtitle);
+            header.appendChild(titleWrap);
+
+            if (highlight) {
+                const badge = document.createElement('span');
+                badge.className = 'uppercase tracking-wide text-xs font-semibold bg-amber-500/15 text-amber-300 px-3 py-1 rounded-full';
+                badge.textContent = 'best team';
+                header.appendChild(badge);
+            }
+
+            const avgStatsRow = document.createElement('div');
+            avgStatsRow.className = 'flex flex-wrap gap-2 text-xs text-gray-300';
+            STAT_KEYS.forEach(k => {
+                const chip = document.createElement('span');
+                chip.className = 'px-2 py-1 rounded-md bg-white/5 border border-gray-800';
+                chip.textContent = `${k.slice(0,3).toUpperCase()}: ${(summary.avgStats[k] || 0).toFixed(1)}`;
+                avgStatsRow.appendChild(chip);
+            });
+
+            card.appendChild(header);
+            card.appendChild(avgStatsRow);
+
+            const tableContainer = document.createElement('div');
+            tableContainer.className = 'overflow-x-auto rounded-lg border border-gray-800';
+            const table = document.createElement('table');
+            table.className = 'min-w-full text-left text-sm';
+            const thead = document.createElement('thead');
+            thead.className = 'bg-gray-900/70 text-gray-300';
+            thead.innerHTML = `
+                <tr>
+                    <th class="px-3 py-2 font-semibold">fighter</th>
+                    <th class="px-3 py-2 font-semibold">record</th>
+                    <th class="px-3 py-2 font-semibold">strength</th>
+                    <th class="px-3 py-2 font-semibold">speed</th>
+                    <th class="px-3 py-2 font-semibold">endurance</th>
+                    <th class="px-3 py-2 font-semibold">technique</th>
+                </tr>
+            `;
+            const tbody = document.createElement('tbody');
+            tbody.className = 'divide-y divide-gray-800';
+
+            const rows = summary.fighters.slice().sort((a, b) => {
+                const aWins = safeNum(a?.Wins);
+                const bWins = safeNum(b?.Wins);
+                if (bWins !== aWins) return bWins - aWins;
+                return String(a?.Name || '').localeCompare(String(b?.Name || ''));
+            });
+
+            rows.forEach(f => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-gray-800/40';
+                const record = `${safeNum(f?.Wins)}-${safeNum(f?.Losses)}-${safeNum(f?.Draws)}`;
+                tr.innerHTML = `
+                    <td class="px-3 py-2">${f?.Name || `#${f?.ID}`}</td>
+                    <td class="px-3 py-2 text-gray-300">${record}</td>
+                    <td class="px-3 py-2 text-gray-200">${safeNum(f?.Strength)}</td>
+                    <td class="px-3 py-2 text-gray-200">${safeNum(f?.Speed)}</td>
+                    <td class="px-3 py-2 text-gray-200">${safeNum(f?.Endurance)}</td>
+                    <td class="px-3 py-2 text-gray-200">${safeNum(f?.Technique)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            table.appendChild(thead);
+            table.appendChild(tbody);
+            tableContainer.appendChild(table);
+            card.appendChild(tableContainer);
+
+            return card;
+        }
+
         function toAmericanOdds(p) {
             if (!Number.isFinite(p)) return '';
             const pc = Math.min(Math.max(p, 0.01), 0.99);
@@ -588,68 +710,57 @@
         }
 
         async function routeTeams() {
-            setStatus('teams');
+            setStatus('teams overview');
             const data = window.store.getJSON('fighters');
-            const arr = Array.isArray(data) ? data : [];
-            const byTeam = new Map();
+            const fighters = Array.isArray(data) ? data : [];
+            if (!fighters.length) {
+                setView(renderTable(['info'], [["no cached fighters yet"]]));
+                setStatus('');
+                return;
+            }
+
+            const actualTeams = new Map();
             const freeAgents = [];
             const customFighters = [];
-            arr.forEach(f => {
-                const team = (f.Team || '').trim();
-                const lc = team.toLowerCase();
-                const isFreeTeam = lc === 'free agent' || lc === 'free agents' || lc === 'fa';
-                const isCustomTeam = lc === 'custom fighter' || lc === 'custom fighters' || lc === 'custom';
-                if (f.IsCustom || isCustomTeam) {
+
+            fighters.forEach(f => {
+                const teamRaw = (f.Team || '').trim();
+                const lc = teamRaw.toLowerCase();
+                const isFree = !teamRaw || lc === 'free agent' || lc === 'free agents' || lc === 'fa';
+                const isCustom = f.IsCustom || lc === 'custom fighter' || lc === 'custom fighters' || lc === 'custom';
+                if (isCustom) {
                     customFighters.push(f);
-                } else if (!team || isFreeTeam) {
+                } else if (isFree) {
                     freeAgents.push(f);
                 } else {
-                    if (!byTeam.has(team)) byTeam.set(team, []);
-                    byTeam.get(team).push(f);
+                    if (!actualTeams.has(teamRaw)) actualTeams.set(teamRaw, []);
+                    actualTeams.get(teamRaw).push(f);
                 }
             });
 
-            const container = document.createElement('div');
-
-            function teamSection(title, fighters, accent) {
-                const sec = document.createElement('section');
-                const h = document.createElement('h2');
-                h.className = `text-lg font-bold mt-6 ${accent || ''}`;
-                h.textContent = `${title} (${fighters.length})`;
-                sec.appendChild(h);
-                const grid = document.createElement('div');
-                grid.className = 'grid sm:grid-cols-2 lg:grid-cols-3 gap-3';
-                fighters.sort((a,b)=> String(a.Name||'').localeCompare(String(b.Name||'')));
-                fighters.forEach(f => {
-                    const card = document.createElement('div');
-                    card.className = 'rounded-lg border border-gray-800 bg-gray-900/50 p-3';
-                    const name = document.createElement('div'); name.className = 'font-semibold'; name.textContent = f.Name || `#${f.ID}`;
-                    const meta = document.createElement('div'); meta.className = 'text-xs text-gray-400 mt-1'; meta.textContent = `${f.FighterClass || ''} • ${f.Wins||0}-${f.Losses||0}-${f.Draws||0}`;
-                    const stats = document.createElement('div'); stats.className = 'mt-2 grid grid-cols-4 gap-1 text-center text-xs';
-                    ['Strength','Speed','Endurance','Technique'].forEach(k=>{
-                        const box = document.createElement('div'); box.className = 'bg-white/5 rounded p-1';
-                        const l = document.createElement('div'); l.className = 'text-[10px] text-gray-400'; l.textContent = k[0]+k.slice(1,3).toLowerCase();
-                        const v = document.createElement('div'); v.className = 'font-bold'; v.textContent = String(f[k] ?? '');
-                        box.appendChild(l); box.appendChild(v); stats.appendChild(box);
-                    });
-                    card.appendChild(name); card.appendChild(meta); card.appendChild(stats);
-                    grid.appendChild(card);
-                });
-                sec.appendChild(grid);
-                return sec;
-            }
-
-            // Teams
-            const sortedTeams = Array.from(byTeam.keys()).sort((a,b)=> a.localeCompare(b));
-            sortedTeams.forEach(team => {
-                container.appendChild(teamSection(team, byTeam.get(team), 'text-cyan-300'));
+            const teamSummaries = Array.from(actualTeams.entries()).map(([name, list]) => summarizeTeam(name, list));
+            teamSummaries.sort((a, b) => {
+                if (b.winRate !== a.winRate) return b.winRate - a.winRate;
+                if (b.wins !== a.wins) return b.wins - a.wins;
+                return a.name.localeCompare(b.name);
             });
 
-            // Free agents
-            container.appendChild(teamSection('free agents', freeAgents, 'text-orange-300'));
+            const container = document.createElement('div');
+            container.className = 'space-y-6';
 
-            // Custom fighters
-            container.appendChild(teamSection('custom fighters', customFighters, 'text-lime-300'));
+            teamSummaries.forEach((summary, index) => {
+                container.appendChild(buildTeamCard(summary, { highlight: index === 0 }));
+            });
+
+            if (freeAgents.length) {
+                const summary = summarizeTeam('free agents', freeAgents);
+                container.appendChild(buildTeamCard(summary));
+            }
+
+            if (customFighters.length) {
+                const summary = summarizeTeam('custom fighters', customFighters);
+                container.appendChild(buildTeamCard(summary));
+            }
 
             setView(container);
             setStatus('');
