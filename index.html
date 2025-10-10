@@ -370,6 +370,9 @@
             table.appendChild(thead);
             table.appendChild(tbody);
             tableContainer.appendChild(table);
+            if (window.tableSort && typeof window.tableSort.makeTableSortable === 'function') {
+                window.tableSort.makeTableSortable(table);
+            }
             card.appendChild(tableContainer);
 
             return card;
